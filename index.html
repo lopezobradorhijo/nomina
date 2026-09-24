@@ -418,7 +418,9 @@
 
         estado.style.color = '#10b981';
         estado.innerText = "¡Completado! Descargando archivo limpio...";
-        salidaPdf.save(`anonimizada_${archivo.name}`);
+        
+        // Guardado con prefijo simplificado a_
+        salidaPdf.save(`a_${archivo.name}`);
       } catch (err) {
         console.error(err);
         estado.style.color = '#ef4444';
