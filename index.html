@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Anonimizador Nómina</title>
   <link rel="manifest" href="manifest.json">
+  
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
@@ -112,21 +113,27 @@
   <div class="card">
     <h1>Configurar Censura de Nómina</h1>
 
-    <div class="section-title">Patrones automáticos a tapar:</div>
+    <div class="section-title">Datos automáticos a tapar:</div>
     <div class="checkbox-group">
       <label class="checkbox-label">
         <input type="checkbox" id="chkDni" checked> DNI / NIE
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" id="chkIban" checked> Cuenta Bancaria (IBAN)
+        <input type="checkbox" id="chkTrabajador" checked> Trabajador (Nombre y Apellidos)
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" id="chkSs" checked> Nº Seguridad Social (NAF)
+        <input type="checkbox" id="chkAfiliacion" checked> Nº Afiliación S.S. (Trabajador)
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="chkInscripcion" checked> Nº Inscripción S.S. (C.C.C. Empresa)
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="chkIban" checked> Cuenta Bancaria (IBAN)
       </label>
     </div>
 
-    <div class="section-title">Nombres o textos manuales (uno por línea):</div>
-    <textarea id="textosExtra" rows="4" placeholder="Tu Nombre y Apellidos&#10;Tu Calle o Dirección&#10;Cualquier otro dato"></textarea>
+    <div class="section-title">Textos adicionales específicos (opcional):</div>
+    <textarea id="textosExtra" rows="3" placeholder="Tu calle o cualquier otro dato personal..."></textarea>
 
     <label class="upload-btn" for="inputPdf">
       Seleccionar Nómina y Anonimizar
@@ -143,48 +150,37 @@
     const estado = document.getElementById('estado');
     const textosExtra = document.getElementById('textosExtra');
     const chkDni = document.getElementById('chkDni');
+    const chkTrabajador = document.getElementById('chkTrabajador');
+    const chkAfiliacion = document.getElementById('chkAfiliacion');
+    const chkInscripcion = document.getElementById('chkInscripcion');
     const chkIban = document.getElementById('chkIban');
-    const chkSs = document.getElementById('chkSs');
 
+    // Cargar preferencias guardadas
     window.addEventListener('DOMContentLoaded', () => {
-      const guardadoTexto = localStorage.getItem('censura_textos');
-      if (guardadoTexto !== null) textosExtra.value = guardadoTexto;
-
-      if (localStorage.getItem('censura_dni') !== null) {
-        chkDni.checked = localStorage.getItem('censura_dni') === 'true';
-      }
-      if (localStorage.getItem('censura_iban') !== null) {
-        chkIban.checked = localStorage.getItem('censura_iban') === 'true';
-      }
-      if (localStorage.getItem('censura_ss') !== null) {
-        chkSs.checked = localStorage.getItem('censura_ss') === 'true';
-      }
+      if (localStorage.getItem('censura_textos') !== null) textosExtra.value = localStorage.getItem('censura_textos');
+      if (localStorage.getItem('censura_dni') !== null) chkDni.checked = localStorage.getItem('censura_dni') === 'true';
+      if (localStorage.getItem('censura_trabajador') !== null) chkTrabajador.checked = localStorage.getItem('censura_trabajador') === 'true';
+      if (localStorage.getItem('censura_afiliacion') !== null) chkAfiliacion.checked = localStorage.getItem('censura_afiliacion') === 'true';
+      if (localStorage.getItem('censura_inscripcion') !== null) chkInscripcion.checked = localStorage.getItem('censura_inscripcion') === 'true';
+      if (localStorage.getItem('censura_iban') !== null) chkIban.checked = localStorage.getItem('censura_iban') === 'true';
     });
 
+    // Guardar cambios al tocar las casillas
     textosExtra.addEventListener('input', () => localStorage.setItem('censura_textos', textosExtra.value));
     chkDni.addEventListener('change', () => localStorage.setItem('censura_dni', chkDni.checked));
+    chkTrabajador.addEventListener('change', () => localStorage.setItem('censura_trabajador', chkTrabajador.checked));
+    chkAfiliacion.addEventListener('change', () => localStorage.setItem('censura_afiliacion', chkAfiliacion.checked));
+    chkInscripcion.addEventListener('change', () => localStorage.setItem('censura_inscripcion', chkInscripcion.checked));
     chkIban.addEventListener('change', () => localStorage.setItem('censura_iban', chkIban.checked));
-    chkSs.addEventListener('change', () => localStorage.setItem('censura_ss', chkSs.checked));
 
     inputPdf.addEventListener('change', async (e) => {
       const archivo = e.target.files[0];
       if (!archivo) return;
 
-      estado.style.color = '#3b82f6';
+      estado.style.color = '#2563eb';
       estado.innerText = "Cargando documento...";
 
-      const patronesActivos = [];
-      if (chkDni.checked) {
-        patronesActivos.push(/\b\d{8}[A-HJ-NP-TV-Z]\b/gi, /\b[XYZ]\d{7}[A-HJ-NP-TV-Z]\b/gi);
-      }
-      if (chkIban.checked) {
-        patronesActivos.push(/\bES\d{2}[ -]?(?:\d{4}[ -]?){5}\b/gi);
-      }
-      if (chkSs.checked) {
-        patronesActivos.push(/\b\d{2}[ -]?\d{8}[ -]?\d{2}\b/g, /\b\d{12}\b/g);
-      }
-
-      const lineasTexto = textosExtra.value
+      const lineasTextoManuales = textosExtra.value
         .split('\n')
         .map(t => t.trim())
         .filter(t => t.length > 0);
@@ -210,39 +206,124 @@
           await pagina.render({ canvasContext: ctx, viewport: viewport }).promise;
 
           const contenidoTexto = await pagina.getTextContent();
-          ctx.fillStyle = '#000000';
+          const items = contenidoTexto.items;
+          const indicesACensurar = new Set();
 
-          for (const item of contenidoTexto.items) {
-            const str = item.str;
-            let censurar = false;
-
-            for (const palabra of lineasTexto) {
-              if (str.toLowerCase().includes(palabra.toLowerCase())) {
-                censurar = true;
-                break;
+          // 1. Textos manuales introducidos por el usuario
+          for (let i = 0; i < items.length; i++) {
+            const strLower = items[i].str.toLowerCase();
+            for (const palabra of lineasTextoManuales) {
+              if (strLower.includes(palabra.toLowerCase())) {
+                indicesACensurar.add(i);
               }
-            }
-
-            if (!censurar) {
-              for (const patron of patronesActivos) {
-                if (patron.test(str)) {
-                  censurar = true;
-                  break;
-                }
-              }
-            }
-
-            if (censurar) {
-              const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-              const x = tx[4];
-              const y = tx[5] - (item.height * 2.0);
-              const w = item.width * 2.0;
-              const h = item.height * 2.5;
-
-              ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
             }
           }
 
+          // 2. DNI / NIE por formato
+          if (chkDni.checked) {
+            const regexDni = /\b\d{8}[A-HJ-NP-TV-Z]\b|\b[XYZ]\d{7}[A-HJ-NP-TV-Z]\b/i;
+            for (let i = 0; i < items.length; i++) {
+              if (regexDni.test(items[i].str)) indicesACensurar.add(i);
+            }
+          }
+
+          // 3. IBAN bancario por formato
+          if (chkIban.checked) {
+            const regexIban = /\bES\d{2}[ -]?(?:\d{4}[ -]?){5}\b/i;
+            for (let i = 0; i < items.length; i++) {
+              if (regexIban.test(items[i].str)) indicesACensurar.add(i);
+            }
+          }
+
+          // 4. Trabajador (etiqueta y nombre continuo)
+          if (chkTrabajador.checked) {
+            for (let i = 0; i < items.length; i++) {
+              const strLower = items[i].str.toLowerCase().trim();
+              if (strLower.includes("trabajador") || strLower.includes("apellidos y nombre") || strLower.includes("empleado")) {
+                indicesACensurar.add(i);
+
+                // Revisa los elementos siguientes donde suele aparecer el nombre
+                const posY = items[i].transform[5];
+                for (let k = i + 1; k < Math.min(i + 6, items.length); k++) {
+                  const textoSiguiente = items[k].str.trim();
+                  const textoSiguienteLower = textoSiguiente.toLowerCase();
+                  if (!textoSiguiente) continue;
+
+                  // Se detiene si llega a otro campo contable o identificador
+                  const esOtroCampo = ['nif', 'dni', 'cif', 'categor', 'grupo', 'antig', 'secc', 'puesto', 'fecha', 'períod', 'period', 'matríc', 'c.c.c', 'afiliac', 'inscrip', 'base', 'devengo', 'total'].some(c => textoSiguienteLower.includes(c));
+                  if (esOtroCampo) break;
+
+                  // Si está en la misma línea o inmediatamente debajo
+                  if (Math.abs(items[k].transform[5] - posY) < 26) {
+                    indicesACensurar.add(k);
+                  } else {
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          // 5. Nº Afiliación S.S. (Trabajador / NAF)
+          if (chkAfiliacion.checked) {
+            const regexNaf = /\b\d{2}[ -./]?\d{8}[ -./]?\d{2}\b|\b\d{12}\b/;
+            for (let i = 0; i < items.length; i++) {
+              const str = items[i].str;
+              const strLower = str.toLowerCase();
+
+              // Por formato de 12 dígitos
+              if (regexNaf.test(str)) indicesACensurar.add(i);
+
+              // Por etiqueta
+              if (strLower.includes("afiliaci") || strLower.includes("n.a.f") || strLower.includes("nº s.s") || strLower.includes("núm. s.s") || strLower.includes("num. s.s")) {
+                indicesACensurar.add(i);
+                for (let k = i + 1; k < Math.min(i + 3, items.length); k++) {
+                  if (/\d/.test(items[k].str)) {
+                    indicesACensurar.add(k);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          // 6. Nº de Inscripción S.S. (C.C.C. Patronal / Empresa)
+          if (chkInscripcion.checked) {
+            const regexCcc = /\b\d{2}[ -./]?(?:\d{7}|\d{8}|\d{9})[ -./]?\d{2}\b|\b\d{11}\b/;
+            for (let i = 0; i < items.length; i++) {
+              const str = items[i].str;
+              const strLower = str.toLowerCase();
+
+              // Por formato de 11 dígitos
+              if (regexCcc.test(str)) indicesACensurar.add(i);
+
+              // Por etiqueta
+              if (strLower.includes("inscripci") || strLower.includes("c.c.c") || strLower.includes("cta. cotiz")) {
+                indicesACensurar.add(i);
+                for (let k = i + 1; k < Math.min(i + 3, items.length); k++) {
+                  if (/\d/.test(items[k].str)) {
+                    indicesACensurar.add(k);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          // Dibujar cajas negras sobre los elementos seleccionados
+          ctx.fillStyle = '#000000';
+          for (const idx of indicesACensurar) {
+            const item = items[idx];
+            const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+            const x = tx[4];
+            const y = tx[5] - (item.height * 2.0);
+            const w = item.width * 2.0;
+            const h = item.height * 2.5;
+
+            ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+          }
+
+          // Renderizar en el nuevo PDF
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           const orientation = viewport.width > viewport.height ? 'l' : 'p';
 
