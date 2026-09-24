@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Anonimizador Nómina</title>
+  <title>Anonimizar nómina</title>
   <link rel="manifest" href="manifest.json">
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -111,7 +111,7 @@
 <body>
 
   <div class="card">
-    <h1>Configurar Censura de Nómina</h1>
+    <h1>Anonimizar nómina</h1>
 
     <div class="section-title">Datos a eliminar:</div>
     <div class="checkbox-group">
@@ -189,7 +189,6 @@
     chkCeco.addEventListener('change', () => localStorage.setItem('censura_ceco', chkCeco.checked));
     chkIban.addEventListener('change', () => localStorage.setItem('censura_iban', chkIban.checked));
 
-    // Palabras protegidas: jamás se deben censurar
     const PALABRAS_PROTEGIDAS = [
       'cuantia', 'cuantía', 'precio', 'concepto', 'devengos', 'deducciones',
       'tarifa', 'categoria', 'categoría', 'antigüedad', 'antiguedad',
@@ -207,13 +206,11 @@
       });
     }
 
-    // Censura estrictamente la celda de la fila siguiente (máximo 32px de caída)
     function censurarDebajoDeCabecera(patronCabecera, items, anchoMaxCol = 320, maxAlt = 32) {
       const indices = [];
       for (let i = 0; i < items.length; i++) {
         const cab = items[i];
         if (patronCabecera.test(cab.strLower)) {
-          // Encuentra el límite derecho con la siguiente columna
           let xMaxCol = cab.x + anchoMaxCol;
           for (let j = 0; j < items.length; j++) {
             if (i === j) continue;
@@ -226,7 +223,6 @@
             }
           }
 
-          // Zona vertical exclusiva de la celda de valor
           const yMin = cab.y + 4;
           const yMax = cab.y + maxAlt;
           const xMin = Math.max(0, cab.x - 10);
@@ -346,7 +342,7 @@
             }
           }
 
-          // 5. Trabajador: patrón APELLIDOS, NOMBRE + búsqueda inmediata
+          // 5. Trabajador
           if (chkTrabajador.checked) {
             const regexNombre = /\b[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*,\s*[A-ZÁÉÍÓÚÑ]{2,}\b/;
             for (const item of items) {
@@ -390,14 +386,14 @@
             censurarDebajoDeCabecera(patronCeco, items, 90, 32).forEach(idx => indicesACensurar.add(idx));
           }
 
-          // Filtro de seguridad final: desmarcar cualquier palabra protegida
+          // Filtro de seguridad: excluir palabras protegidas
           for (const idx of Array.from(indicesACensurar)) {
             if (esPalabraProtegida(items[idx].strLower)) {
               indicesACensurar.delete(idx);
             }
           }
 
-          // Aplicar recuadros negros
+          // Pintar recuadros negros
           ctx.fillStyle = '#000000';
           for (const idx of indicesACensurar) {
             const item = items[idx];
