@@ -113,13 +113,16 @@
   <div class="card">
     <h1>Configurar Censura de Nómina</h1>
 
-    <div class="section-title">Datos a eliminar (deja el título visible):</div>
+    <div class="section-title">Datos a eliminar:</div>
     <div class="checkbox-group">
       <label class="checkbox-label">
         <input type="checkbox" id="chkDni" checked> D.N.I.
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" id="chkTrabajador" checked> Nombre y Apellidos (bajo "Trabajador")
+        <input type="checkbox" id="chkCif" checked> CIF / NIF de Empresa
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="chkTrabajador" checked> Nombre y Apellidos (Trabajador)
       </label>
       <label class="checkbox-label">
         <input type="checkbox" id="chkAfiliacion" checked> Nº Afiliación S.S.
@@ -128,12 +131,18 @@
         <input type="checkbox" id="chkInscripcion" checked> Nº Inscripción S.S. (C.C.C.)
       </label>
       <label class="checkbox-label">
+        <input type="checkbox" id="chkNro" checked> Nº Empleado / Matrícula (NRO.)
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="chkCeco"> Centro de Coste (CECO)
+      </label>
+      <label class="checkbox-label">
         <input type="checkbox" id="chkIban" checked> Cuenta Bancaria (IBAN)
       </label>
     </div>
 
     <div class="section-title">Textos adicionales específicos (opcional):</div>
-    <textarea id="textosExtra" rows="3" placeholder="Tu calle o cualquier otro dato personal..."></textarea>
+    <textarea id="textosExtra" rows="2" placeholder="Tu calle o cualquier otro dato personal..."></textarea>
 
     <label class="upload-btn" for="inputPdf">
       Seleccionar Nómina y Anonimizar
@@ -150,67 +159,76 @@
     const estado = document.getElementById('estado');
     const textosExtra = document.getElementById('textosExtra');
     const chkDni = document.getElementById('chkDni');
+    const chkCif = document.getElementById('chkCif');
     const chkTrabajador = document.getElementById('chkTrabajador');
     const chkAfiliacion = document.getElementById('chkAfiliacion');
     const chkInscripcion = document.getElementById('chkInscripcion');
+    const chkNro = document.getElementById('chkNro');
+    const chkCeco = document.getElementById('chkCeco');
     const chkIban = document.getElementById('chkIban');
 
     window.addEventListener('DOMContentLoaded', () => {
       if (localStorage.getItem('censura_textos') !== null) textosExtra.value = localStorage.getItem('censura_textos');
       if (localStorage.getItem('censura_dni') !== null) chkDni.checked = localStorage.getItem('censura_dni') === 'true';
+      if (localStorage.getItem('censura_cif') !== null) chkCif.checked = localStorage.getItem('censura_cif') === 'true';
       if (localStorage.getItem('censura_trabajador') !== null) chkTrabajador.checked = localStorage.getItem('censura_trabajador') === 'true';
       if (localStorage.getItem('censura_afiliacion') !== null) chkAfiliacion.checked = localStorage.getItem('censura_afiliacion') === 'true';
       if (localStorage.getItem('censura_inscripcion') !== null) chkInscripcion.checked = localStorage.getItem('censura_inscripcion') === 'true';
+      if (localStorage.getItem('censura_nro') !== null) chkNro.checked = localStorage.getItem('censura_nro') === 'true';
+      if (localStorage.getItem('censura_ceco') !== null) chkCeco.checked = localStorage.getItem('censura_ceco') === 'true';
       if (localStorage.getItem('censura_iban') !== null) chkIban.checked = localStorage.getItem('censura_iban') === 'true';
     });
 
     textosExtra.addEventListener('input', () => localStorage.setItem('censura_textos', textosExtra.value));
     chkDni.addEventListener('change', () => localStorage.setItem('censura_dni', chkDni.checked));
+    chkCif.addEventListener('change', () => localStorage.setItem('censura_cif', chkCif.checked));
     chkTrabajador.addEventListener('change', () => localStorage.setItem('censura_trabajador', chkTrabajador.checked));
     chkAfiliacion.addEventListener('change', () => localStorage.setItem('censura_afiliacion', chkAfiliacion.checked));
     chkInscripcion.addEventListener('change', () => localStorage.setItem('censura_inscripcion', chkInscripcion.checked));
+    chkNro.addEventListener('change', () => localStorage.setItem('censura_nro', chkNro.checked));
+    chkCeco.addEventListener('change', () => localStorage.setItem('censura_ceco', chkCeco.checked));
     chkIban.addEventListener('change', () => localStorage.setItem('censura_iban', chkIban.checked));
 
-    // Función espacial: busca los textos situados en la celda inferior de la cabecera
-    function buscarContenidoDebajo(patronCabecera, items) {
-      const indicesEncontrados = [];
-
+    function censurarDebajoDeCabecera(patronCabecera, items, anchoMaxCol = 340, maxAlt = 95) {
+      const indices = [];
       for (let i = 0; i < items.length; i++) {
-        const itemCabecera = items[i];
-
-        if (patronCabecera.test(itemCabecera.strLower)) {
-          // NUNCA censura la cabecera (se deja visible el título de la casilla)
-
-          // Límite horizontal derecho: busca la siguiente columna en la misma línea
-          let xMax = itemCabecera.x + Math.max(itemCabecera.w * 3.5, 320);
+        const cab = items[i];
+        if (patronCabecera.test(cab.strLower)) {
+          let xMaxCol = cab.x + anchoMaxCol;
           for (let j = 0; j < items.length; j++) {
             if (i === j) continue;
             const otro = items[j];
-            if (Math.abs(otro.y - itemCabecera.y) < 14 && otro.x > itemCabecera.x + 20) {
-              if (otro.x < xMax) {
-                xMax = otro.x - 4;
+            if (!otro.strTrimmed) continue;
+            if (Math.abs(otro.y - cab.y) < 22 && otro.x > cab.x + 15) {
+              if (otro.x < xMaxCol) {
+                xMaxCol = otro.x - 4;
               }
             }
           }
 
-          // Zona vertical de la casilla inferior
-          const yMin = itemCabecera.y + 6;
-          const yMax = itemCabecera.y + 55;
-          const xMin = itemCabecera.x - 15;
+          const yMin = cab.y + 4;
+          const yMax = cab.y + maxAlt;
+          const xMin = Math.max(0, cab.x - 25);
 
-          // Selecciona cualquier texto ubicado dentro del cuadrante inferior
           for (let k = 0; k < items.length; k++) {
             if (k === i) continue;
-            const candidato = items[k];
-            if (!candidato.str.trim()) continue;
+            const cand = items[k];
+            if (!cand.strTrimmed) continue;
 
-            if (candidato.y >= yMin && candidato.y <= yMax && candidato.x >= xMin && candidato.x <= xMax) {
-              indicesEncontrados.push(k);
+            const esCabecera = /^(trabajador|categoria|categoría|antigüedad|antiguedad|d\.?n\.?i|afiliaci[óo]n|tarifa|ceco|nro\.?|periodo|tot\.?d[íi]as|concepto|devengos|deducciones|empresa|domicilio|inscripci[óo]n)/i.test(cand.strLower);
+            if (esCabecera) continue;
+
+            const candCenterX = cand.x + cand.w / 2;
+            const candCenterY = cand.y + cand.h / 2;
+
+            if (candCenterY >= yMin && candCenterY <= yMax &&
+                candCenterX >= xMin && candCenterX <= xMaxCol) {
+              indices.push(cand.idx);
             }
           }
         }
       }
-      return indicesEncontrados;
+      return indices;
     }
 
     inputPdf.addEventListener('change', async (e) => {
@@ -247,7 +265,6 @@
 
           const contenidoTexto = await pagina.getTextContent();
           
-          // Mapea todos los textos con sus coordenadas absolutas en pantalla
           const items = contenidoTexto.items.map((item, idx) => {
             const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
             const w = item.width * 2.0;
@@ -256,6 +273,7 @@
               idx,
               rawItem: item,
               str: item.str,
+              strTrimmed: item.str.trim(),
               strLower: item.str.toLowerCase().trim(),
               x: tx[4],
               y: tx[5] - h,
@@ -266,7 +284,7 @@
 
           const indicesACensurar = new Set();
 
-          // 1. Textos manuales introducidos en el cuadro
+          // 1. Textos manuales
           for (const item of items) {
             for (const palabra of lineasTextoManuales) {
               if (item.strLower.includes(palabra.toLowerCase())) {
@@ -275,7 +293,7 @@
             }
           }
 
-          // 2. DNI / NIE (detecta el valor numérico)
+          // 2. DNI / NIE numérico
           if (chkDni.checked) {
             const regexDni = /\b\d{8}[A-HJ-NP-TV-Z]\b|\b[XYZ]\d{7}[A-HJ-NP-TV-Z]\b/i;
             for (const item of items) {
@@ -283,7 +301,25 @@
             }
           }
 
-          // 3. IBAN bancario
+          // 3. CIF / NIF de Empresa
+          if (chkCif.checked) {
+            const regexCif = /\b[A-HJ-NP-SUVW]\d{7}[0-9A-J]\b/i;
+            for (let i = 0; i < items.length; i++) {
+              const item = items[i];
+              if (regexCif.test(item.str)) {
+                indicesACensurar.add(item.idx);
+              }
+              if (item.strLower.includes("cif") || item.strLower.includes("nif/cif") || item.strLower.includes("c.i.f")) {
+                indicesACensurar.add(item.idx);
+                // Si el número CIF está en el siguiente elemento contiguo
+                if (i + 1 < items.length && regexCif.test(items[i + 1].str)) {
+                  indicesACensurar.add(items[i + 1].idx);
+                }
+              }
+            }
+          }
+
+          // 4. IBAN bancario
           if (chkIban.checked) {
             const regexIban = /\bES\d{2}[ -]?(?:\d{4}[ -]?){5}\b/i;
             for (const item of items) {
@@ -291,33 +327,52 @@
             }
           }
 
-          // 4. Trabajador: captura el Nombre y Apellidos debajo de la casilla
+          // 5. Trabajador (búsqueda espacial + patrón APELLIDOS, NOMBRE)
           if (chkTrabajador.checked) {
-            const patron = /\b(trabajador|empleado|apellidos\s*y\s*nombre)\b/i;
-            buscarContenidoDebajo(patron, items).forEach(i => indicesACensurar.add(i));
+            const patronTrabajador = /\b(trabajador|empleado|apellidos\s*y\s*nombre)\b/i;
+            censurarDebajoDeCabecera(patronTrabajador, items, 350, 100).forEach(idx => indicesACensurar.add(idx));
+
+            const regexNombre = /\b[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*,\s*[A-ZÁÉÍÓÚÑ]{2,}\b/;
+            for (const item of items) {
+              if (item.y < viewport.height * 0.45 && regexNombre.test(item.str)) {
+                indicesACensurar.add(item.idx);
+              }
+            }
           }
 
-          // 5. Nº Afiliación S.S. (NAF)
+          // 6. Nº Afiliación S.S.
           if (chkAfiliacion.checked) {
             const regexNaf = /\b\d{2}[\s\/\.\-]?\d{8}[\s\/\.\-]?\d{2}\b|\b\d{12}\b/;
             for (const item of items) {
               if (regexNaf.test(item.str)) indicesACensurar.add(item.idx);
             }
             const patronAfil = /\b(afiliaci[oó]n|n\.?a\.?f|n[ºoúum\.]*\s*s\.?s)\b/i;
-            buscarContenidoDebajo(patronAfil, items).forEach(i => indicesACensurar.add(i));
+            censurarDebajoDeCabecera(patronAfil, items, 150, 80).forEach(idx => indicesACensurar.add(idx));
           }
 
-          // 6. Nº Inscripción S.S. (C.C.C. Patronal)
+          // 7. Nº Inscripción S.S. (C.C.C.)
           if (chkInscripcion.checked) {
             const regexCcc = /\b\d{2}[\s\/\.\-]?\d{7,9}[\s\/\.\-]?\d{2}\b|\b\d{11}\b/;
             for (const item of items) {
               if (regexCcc.test(item.str)) indicesACensurar.add(item.idx);
             }
             const patronInsc = /\b(inscripci[oó]n|c\.?c\.?c|cta\.?\s*cotiz)\b/i;
-            buscarContenidoDebajo(patronInsc, items).forEach(i => indicesACensurar.add(i));
+            censurarDebajoDeCabecera(patronInsc, items, 180, 80).forEach(idx => indicesACensurar.add(idx));
           }
 
-          // Dibuja los cuadros negros únicamente sobre los valores correspondientes
+          // 8. Nº Empleado / Matrícula (NRO.)
+          if (chkNro.checked) {
+            const patronNro = /\b(nro\.?|matr[ií]cula|n[ºo]\s*empleado)\b/i;
+            censurarDebajoDeCabecera(patronNro, items, 100, 80).forEach(idx => indicesACensurar.add(idx));
+          }
+
+          // 9. Centro de Coste (CECO)
+          if (chkCeco.checked) {
+            const patronCeco = /\b(ceco|c\.?c\.?|centro\s*coste)\b/i;
+            censurarDebajoDeCabecera(patronCeco, items, 100, 80).forEach(idx => indicesACensurar.add(idx));
+          }
+
+          // Pintar recuadros negros
           ctx.fillStyle = '#000000';
           for (const idx of indicesACensurar) {
             const item = items[idx];
