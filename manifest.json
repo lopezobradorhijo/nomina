@@ -1,6 +1,6 @@
 {
-  "name": "Anonimizador Nómina",
-  "short_name": "Nómina",
+  "name": "Anonimizar nómina",
+  "short_name": "Anonimizar nómina",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#121212",
