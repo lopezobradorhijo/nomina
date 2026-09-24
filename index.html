@@ -113,19 +113,19 @@
   <div class="card">
     <h1>Configurar Censura de Nómina</h1>
 
-    <div class="section-title">Datos automáticos a tapar:</div>
+    <div class="section-title">Datos a eliminar (deja el título visible):</div>
     <div class="checkbox-group">
       <label class="checkbox-label">
-        <input type="checkbox" id="chkDni" checked> DNI / NIE
+        <input type="checkbox" id="chkDni" checked> D.N.I.
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" id="chkTrabajador" checked> Trabajador (Nombre y Apellidos)
+        <input type="checkbox" id="chkTrabajador" checked> Nombre y Apellidos (bajo "Trabajador")
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" id="chkAfiliacion" checked> Nº Afiliación S.S. (Trabajador)
+        <input type="checkbox" id="chkAfiliacion" checked> Nº Afiliación S.S.
       </label>
       <label class="checkbox-label">
-        <input type="checkbox" id="chkInscripcion" checked> Nº Inscripción S.S. (C.C.C. Empresa)
+        <input type="checkbox" id="chkInscripcion" checked> Nº Inscripción S.S. (C.C.C.)
       </label>
       <label class="checkbox-label">
         <input type="checkbox" id="chkIban" checked> Cuenta Bancaria (IBAN)
@@ -155,7 +155,6 @@
     const chkInscripcion = document.getElementById('chkInscripcion');
     const chkIban = document.getElementById('chkIban');
 
-    // Cargar preferencias guardadas
     window.addEventListener('DOMContentLoaded', () => {
       if (localStorage.getItem('censura_textos') !== null) textosExtra.value = localStorage.getItem('censura_textos');
       if (localStorage.getItem('censura_dni') !== null) chkDni.checked = localStorage.getItem('censura_dni') === 'true';
@@ -165,13 +164,54 @@
       if (localStorage.getItem('censura_iban') !== null) chkIban.checked = localStorage.getItem('censura_iban') === 'true';
     });
 
-    // Guardar cambios al tocar las casillas
     textosExtra.addEventListener('input', () => localStorage.setItem('censura_textos', textosExtra.value));
     chkDni.addEventListener('change', () => localStorage.setItem('censura_dni', chkDni.checked));
     chkTrabajador.addEventListener('change', () => localStorage.setItem('censura_trabajador', chkTrabajador.checked));
     chkAfiliacion.addEventListener('change', () => localStorage.setItem('censura_afiliacion', chkAfiliacion.checked));
     chkInscripcion.addEventListener('change', () => localStorage.setItem('censura_inscripcion', chkInscripcion.checked));
     chkIban.addEventListener('change', () => localStorage.setItem('censura_iban', chkIban.checked));
+
+    // Función espacial: busca los textos situados en la celda inferior de la cabecera
+    function buscarContenidoDebajo(patronCabecera, items) {
+      const indicesEncontrados = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const itemCabecera = items[i];
+
+        if (patronCabecera.test(itemCabecera.strLower)) {
+          // NUNCA censura la cabecera (se deja visible el título de la casilla)
+
+          // Límite horizontal derecho: busca la siguiente columna en la misma línea
+          let xMax = itemCabecera.x + Math.max(itemCabecera.w * 3.5, 320);
+          for (let j = 0; j < items.length; j++) {
+            if (i === j) continue;
+            const otro = items[j];
+            if (Math.abs(otro.y - itemCabecera.y) < 14 && otro.x > itemCabecera.x + 20) {
+              if (otro.x < xMax) {
+                xMax = otro.x - 4;
+              }
+            }
+          }
+
+          // Zona vertical de la casilla inferior
+          const yMin = itemCabecera.y + 6;
+          const yMax = itemCabecera.y + 55;
+          const xMin = itemCabecera.x - 15;
+
+          // Selecciona cualquier texto ubicado dentro del cuadrante inferior
+          for (let k = 0; k < items.length; k++) {
+            if (k === i) continue;
+            const candidato = items[k];
+            if (!candidato.str.trim()) continue;
+
+            if (candidato.y >= yMin && candidato.y <= yMax && candidato.x >= xMin && candidato.x <= xMax) {
+              indicesEncontrados.push(k);
+            }
+          }
+        }
+      }
+      return indicesEncontrados;
+    }
 
     inputPdf.addEventListener('change', async (e) => {
       const archivo = e.target.files[0];
@@ -206,124 +246,84 @@
           await pagina.render({ canvasContext: ctx, viewport: viewport }).promise;
 
           const contenidoTexto = await pagina.getTextContent();
-          const items = contenidoTexto.items;
+          
+          // Mapea todos los textos con sus coordenadas absolutas en pantalla
+          const items = contenidoTexto.items.map((item, idx) => {
+            const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+            const w = item.width * 2.0;
+            const h = (item.height || 10) * 2.0;
+            return {
+              idx,
+              rawItem: item,
+              str: item.str,
+              strLower: item.str.toLowerCase().trim(),
+              x: tx[4],
+              y: tx[5] - h,
+              w,
+              h
+            };
+          });
+
           const indicesACensurar = new Set();
 
-          // 1. Textos manuales introducidos por el usuario
-          for (let i = 0; i < items.length; i++) {
-            const strLower = items[i].str.toLowerCase();
+          // 1. Textos manuales introducidos en el cuadro
+          for (const item of items) {
             for (const palabra of lineasTextoManuales) {
-              if (strLower.includes(palabra.toLowerCase())) {
-                indicesACensurar.add(i);
+              if (item.strLower.includes(palabra.toLowerCase())) {
+                indicesACensurar.add(item.idx);
               }
             }
           }
 
-          // 2. DNI / NIE por formato
+          // 2. DNI / NIE (detecta el valor numérico)
           if (chkDni.checked) {
             const regexDni = /\b\d{8}[A-HJ-NP-TV-Z]\b|\b[XYZ]\d{7}[A-HJ-NP-TV-Z]\b/i;
-            for (let i = 0; i < items.length; i++) {
-              if (regexDni.test(items[i].str)) indicesACensurar.add(i);
+            for (const item of items) {
+              if (regexDni.test(item.str)) indicesACensurar.add(item.idx);
             }
           }
 
-          // 3. IBAN bancario por formato
+          // 3. IBAN bancario
           if (chkIban.checked) {
             const regexIban = /\bES\d{2}[ -]?(?:\d{4}[ -]?){5}\b/i;
-            for (let i = 0; i < items.length; i++) {
-              if (regexIban.test(items[i].str)) indicesACensurar.add(i);
+            for (const item of items) {
+              if (regexIban.test(item.str)) indicesACensurar.add(item.idx);
             }
           }
 
-          // 4. Trabajador (etiqueta y nombre continuo)
+          // 4. Trabajador: captura el Nombre y Apellidos debajo de la casilla
           if (chkTrabajador.checked) {
-            for (let i = 0; i < items.length; i++) {
-              const strLower = items[i].str.toLowerCase().trim();
-              if (strLower.includes("trabajador") || strLower.includes("apellidos y nombre") || strLower.includes("empleado")) {
-                indicesACensurar.add(i);
-
-                // Revisa los elementos siguientes donde suele aparecer el nombre
-                const posY = items[i].transform[5];
-                for (let k = i + 1; k < Math.min(i + 6, items.length); k++) {
-                  const textoSiguiente = items[k].str.trim();
-                  const textoSiguienteLower = textoSiguiente.toLowerCase();
-                  if (!textoSiguiente) continue;
-
-                  // Se detiene si llega a otro campo contable o identificador
-                  const esOtroCampo = ['nif', 'dni', 'cif', 'categor', 'grupo', 'antig', 'secc', 'puesto', 'fecha', 'períod', 'period', 'matríc', 'c.c.c', 'afiliac', 'inscrip', 'base', 'devengo', 'total'].some(c => textoSiguienteLower.includes(c));
-                  if (esOtroCampo) break;
-
-                  // Si está en la misma línea o inmediatamente debajo
-                  if (Math.abs(items[k].transform[5] - posY) < 26) {
-                    indicesACensurar.add(k);
-                  } else {
-                    break;
-                  }
-                }
-              }
-            }
+            const patron = /\b(trabajador|empleado|apellidos\s*y\s*nombre)\b/i;
+            buscarContenidoDebajo(patron, items).forEach(i => indicesACensurar.add(i));
           }
 
-          // 5. Nº Afiliación S.S. (Trabajador / NAF)
+          // 5. Nº Afiliación S.S. (NAF)
           if (chkAfiliacion.checked) {
-            const regexNaf = /\b\d{2}[ -./]?\d{8}[ -./]?\d{2}\b|\b\d{12}\b/;
-            for (let i = 0; i < items.length; i++) {
-              const str = items[i].str;
-              const strLower = str.toLowerCase();
-
-              // Por formato de 12 dígitos
-              if (regexNaf.test(str)) indicesACensurar.add(i);
-
-              // Por etiqueta
-              if (strLower.includes("afiliaci") || strLower.includes("n.a.f") || strLower.includes("nº s.s") || strLower.includes("núm. s.s") || strLower.includes("num. s.s")) {
-                indicesACensurar.add(i);
-                for (let k = i + 1; k < Math.min(i + 3, items.length); k++) {
-                  if (/\d/.test(items[k].str)) {
-                    indicesACensurar.add(k);
-                    break;
-                  }
-                }
-              }
+            const regexNaf = /\b\d{2}[\s\/\.\-]?\d{8}[\s\/\.\-]?\d{2}\b|\b\d{12}\b/;
+            for (const item of items) {
+              if (regexNaf.test(item.str)) indicesACensurar.add(item.idx);
             }
+            const patronAfil = /\b(afiliaci[oó]n|n\.?a\.?f|n[ºoúum\.]*\s*s\.?s)\b/i;
+            buscarContenidoDebajo(patronAfil, items).forEach(i => indicesACensurar.add(i));
           }
 
-          // 6. Nº de Inscripción S.S. (C.C.C. Patronal / Empresa)
+          // 6. Nº Inscripción S.S. (C.C.C. Patronal)
           if (chkInscripcion.checked) {
-            const regexCcc = /\b\d{2}[ -./]?(?:\d{7}|\d{8}|\d{9})[ -./]?\d{2}\b|\b\d{11}\b/;
-            for (let i = 0; i < items.length; i++) {
-              const str = items[i].str;
-              const strLower = str.toLowerCase();
-
-              // Por formato de 11 dígitos
-              if (regexCcc.test(str)) indicesACensurar.add(i);
-
-              // Por etiqueta
-              if (strLower.includes("inscripci") || strLower.includes("c.c.c") || strLower.includes("cta. cotiz")) {
-                indicesACensurar.add(i);
-                for (let k = i + 1; k < Math.min(i + 3, items.length); k++) {
-                  if (/\d/.test(items[k].str)) {
-                    indicesACensurar.add(k);
-                    break;
-                  }
-                }
-              }
+            const regexCcc = /\b\d{2}[\s\/\.\-]?\d{7,9}[\s\/\.\-]?\d{2}\b|\b\d{11}\b/;
+            for (const item of items) {
+              if (regexCcc.test(item.str)) indicesACensurar.add(item.idx);
             }
+            const patronInsc = /\b(inscripci[oó]n|c\.?c\.?c|cta\.?\s*cotiz)\b/i;
+            buscarContenidoDebajo(patronInsc, items).forEach(i => indicesACensurar.add(i));
           }
 
-          // Dibujar cajas negras sobre los elementos seleccionados
+          // Dibuja los cuadros negros únicamente sobre los valores correspondientes
           ctx.fillStyle = '#000000';
           for (const idx of indicesACensurar) {
             const item = items[idx];
-            const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-            const x = tx[4];
-            const y = tx[5] - (item.height * 2.0);
-            const w = item.width * 2.0;
-            const h = item.height * 2.5;
-
-            ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+            ctx.fillRect(item.x - 2, item.y - 2, item.w + 4, item.h + 5);
           }
 
-          // Renderizar en el nuevo PDF
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           const orientation = viewport.width > viewport.height ? 'l' : 'p';
 
