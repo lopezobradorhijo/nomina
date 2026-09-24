@@ -189,34 +189,54 @@
     chkCeco.addEventListener('change', () => localStorage.setItem('censura_ceco', chkCeco.checked));
     chkIban.addEventListener('change', () => localStorage.setItem('censura_iban', chkIban.checked));
 
-    function censurarDebajoDeCabecera(patronCabecera, items, anchoMaxCol = 340, maxAlt = 95) {
+    // Palabras protegidas: jamás se deben censurar
+    const PALABRAS_PROTEGIDAS = [
+      'cuantia', 'cuantía', 'precio', 'concepto', 'devengos', 'deducciones',
+      'tarifa', 'categoria', 'categoría', 'antigüedad', 'antiguedad',
+      'periodo', 'period', 'tot.días', 'tot.dias', 'dias', 'días',
+      'base', 'cotizacion', 'cotización', 'irpf', 'liquido', 'líquido',
+      'total', 'remuneracion', 'remuneración', 'horas', 'retencion', 'retención',
+      'empresa', 'domicilio', 'trabajador', 'd.n.i.', 'dni'
+    ];
+
+    function esPalabraProtegida(texto) {
+      const limpio = texto.toLowerCase().replace(/[^a-záéíóúñ0-9]/g, '');
+      return PALABRAS_PROTEGIDAS.some(p => {
+        const pLimpia = p.replace(/[^a-záéíóúñ0-9]/g, '');
+        return limpio === pLimpia;
+      });
+    }
+
+    // Censura estrictamente la celda de la fila siguiente (máximo 32px de caída)
+    function censurarDebajoDeCabecera(patronCabecera, items, anchoMaxCol = 320, maxAlt = 32) {
       const indices = [];
       for (let i = 0; i < items.length; i++) {
         const cab = items[i];
         if (patronCabecera.test(cab.strLower)) {
+          // Encuentra el límite derecho con la siguiente columna
           let xMaxCol = cab.x + anchoMaxCol;
           for (let j = 0; j < items.length; j++) {
             if (i === j) continue;
             const otro = items[j];
             if (!otro.strTrimmed) continue;
-            if (Math.abs(otro.y - cab.y) < 22 && otro.x > cab.x + 15) {
+            if (Math.abs(otro.y - cab.y) < 18 && otro.x > cab.x + 15) {
               if (otro.x < xMaxCol) {
                 xMaxCol = otro.x - 4;
               }
             }
           }
 
+          // Zona vertical exclusiva de la celda de valor
           const yMin = cab.y + 4;
           const yMax = cab.y + maxAlt;
-          const xMin = Math.max(0, cab.x - 25);
+          const xMin = Math.max(0, cab.x - 10);
 
           for (let k = 0; k < items.length; k++) {
             if (k === i) continue;
             const cand = items[k];
             if (!cand.strTrimmed) continue;
 
-            const esCabecera = /^(trabajador|categoria|categoría|antigüedad|antiguedad|d\.?n\.?i|afiliaci[óo]n|tarifa|ceco|nro\.?|periodo|tot\.?d[íi]as|concepto|devengos|deducciones|empresa|domicilio|inscripci[óo]n)/i.test(cand.strLower);
-            if (esCabecera) continue;
+            if (esPalabraProtegida(cand.strLower)) continue;
 
             const candCenterX = cand.x + cand.w / 2;
             const candCenterY = cand.y + cand.h / 2;
@@ -311,7 +331,6 @@
               }
               if (item.strLower.includes("cif") || item.strLower.includes("nif/cif") || item.strLower.includes("c.i.f")) {
                 indicesACensurar.add(item.idx);
-                // Si el número CIF está en el siguiente elemento contiguo
                 if (i + 1 < items.length && regexCif.test(items[i + 1].str)) {
                   indicesACensurar.add(items[i + 1].idx);
                 }
@@ -327,17 +346,16 @@
             }
           }
 
-          // 5. Trabajador (búsqueda espacial + patrón APELLIDOS, NOMBRE)
+          // 5. Trabajador: patrón APELLIDOS, NOMBRE + búsqueda inmediata
           if (chkTrabajador.checked) {
-            const patronTrabajador = /\b(trabajador|empleado|apellidos\s*y\s*nombre)\b/i;
-            censurarDebajoDeCabecera(patronTrabajador, items, 350, 100).forEach(idx => indicesACensurar.add(idx));
-
             const regexNombre = /\b[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*,\s*[A-ZÁÉÍÓÚÑ]{2,}\b/;
             for (const item of items) {
-              if (item.y < viewport.height * 0.45 && regexNombre.test(item.str)) {
+              if (item.y < viewport.height * 0.40 && regexNombre.test(item.str)) {
                 indicesACensurar.add(item.idx);
               }
             }
+            const patronTrabajador = /\b(trabajador|empleado|apellidos\s*y\s*nombre)\b/i;
+            censurarDebajoDeCabecera(patronTrabajador, items, 300, 32).forEach(idx => indicesACensurar.add(idx));
           }
 
           // 6. Nº Afiliación S.S.
@@ -347,7 +365,7 @@
               if (regexNaf.test(item.str)) indicesACensurar.add(item.idx);
             }
             const patronAfil = /\b(afiliaci[oó]n|n\.?a\.?f|n[ºoúum\.]*\s*s\.?s)\b/i;
-            censurarDebajoDeCabecera(patronAfil, items, 150, 80).forEach(idx => indicesACensurar.add(idx));
+            censurarDebajoDeCabecera(patronAfil, items, 140, 32).forEach(idx => indicesACensurar.add(idx));
           }
 
           // 7. Nº Inscripción S.S. (C.C.C.)
@@ -357,22 +375,29 @@
               if (regexCcc.test(item.str)) indicesACensurar.add(item.idx);
             }
             const patronInsc = /\b(inscripci[oó]n|c\.?c\.?c|cta\.?\s*cotiz)\b/i;
-            censurarDebajoDeCabecera(patronInsc, items, 180, 80).forEach(idx => indicesACensurar.add(idx));
+            censurarDebajoDeCabecera(patronInsc, items, 180, 32).forEach(idx => indicesACensurar.add(idx));
           }
 
           // 8. Nº Empleado / Matrícula (NRO.)
           if (chkNro.checked) {
             const patronNro = /\b(nro\.?|matr[ií]cula|n[ºo]\s*empleado)\b/i;
-            censurarDebajoDeCabecera(patronNro, items, 100, 80).forEach(idx => indicesACensurar.add(idx));
+            censurarDebajoDeCabecera(patronNro, items, 90, 32).forEach(idx => indicesACensurar.add(idx));
           }
 
           // 9. Centro de Coste (CECO)
           if (chkCeco.checked) {
             const patronCeco = /\b(ceco|c\.?c\.?|centro\s*coste)\b/i;
-            censurarDebajoDeCabecera(patronCeco, items, 100, 80).forEach(idx => indicesACensurar.add(idx));
+            censurarDebajoDeCabecera(patronCeco, items, 90, 32).forEach(idx => indicesACensurar.add(idx));
           }
 
-          // Pintar recuadros negros
+          // Filtro de seguridad final: desmarcar cualquier palabra protegida
+          for (const idx of Array.from(indicesACensurar)) {
+            if (esPalabraProtegida(items[idx].strLower)) {
+              indicesACensurar.delete(idx);
+            }
+          }
+
+          // Aplicar recuadros negros
           ctx.fillStyle = '#000000';
           for (const idx of indicesACensurar) {
             const item = items[idx];
